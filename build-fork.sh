@@ -16,7 +16,7 @@ cd "$SCRIPT_DIR"
 
 INSTALL=false
 TOOLS="${PIXELBOARD_TOOLS:-$LOCALAPPDATA/pixelboard-tools}"
-INPUT_APK="$TOOLS/input/gboard-18.5.3.apkm"
+INPUT_APK="$TOOLS/input/gboard-18.6.3.apkm"
 for arg in "$@"; do
     case "$arg" in
         -i|--install) INSTALL=true ;;
@@ -48,7 +48,10 @@ export PYTHONUTF8=1
 
 echo "=== 🎹 Compiling patch bundle ==="
 (cd pixelboard-patches && ./gradlew :patches:buildAndroid --console=plain -q)
-MPP_PATH="$(ls pixelboard-patches/patches/build/libs/patches-*.mpp | grep -v -e javadoc -e sources | head -n 1)"
+PATCH_VERSION="$(grep -E "^version\s*=" pixelboard-patches/gradle.properties | cut -d'=' -f2 | tr -d ' \r')"
+# build/libs keeps bundles from older versions, so pick this version's explicitly.
+MPP_PATH="pixelboard-patches/patches/build/libs/patches-${PATCH_VERSION}.mpp"
+[[ -f "$MPP_PATH" ]] || { echo "❌ Patch bundle not found: $MPP_PATH"; exit 1; }
 echo "✅ $MPP_PATH"
 
 echo "=== 🔨 Patching $INPUT_APK ==="

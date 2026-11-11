@@ -7,8 +7,10 @@ Akshayykadam/PixelBoard. The design is in
 ## One-time setup (already done on this PC)
 
 - Java 21 and jadx in `%LOCALAPPDATA%\pixelboard-tools\`.
-- Stock Gboard bundle at `%LOCALAPPDATA%\pixelboard-tools\input\gboard-18.5.3.apkm`
-  (APKMirror, `18.5.3.993608717-release-arm64-v8a`, Android 10+ variant).
+- Stock Gboard bundle at `%LOCALAPPDATA%\pixelboard-tools\input\gboard-18.6.3.apkm`
+  (APKMirror, `18.6.3.1002251336-release-arm64-v8a`, the Android 10+ bundle
+  with 6 splits; it must be a bundle, since voice typing needs its dictation
+  split). The 18.5.3 bundle used up to PixelBoard 1.3.3 is kept next to it.
 - GitHub CLI login with `read:packages`:
   `gh auth refresh -h github.com -s read:packages`
 - Signing key converted from the shared PixelBoard key (same certificate as
@@ -46,18 +48,31 @@ git merge main
 ```
 
 If upstream moves to a new Gboard base version, download that stock bundle,
-pass its path to `build-fork.sh`, and add the new obfuscated name of the
-top-rounded keyboard module's `applyOutline(KeyboardViewType, View)` method to
-`GboardExpressiveLookPatch.kt` (in 18.5.3 it is `Lrbm;->s(Lqcl;Landroid/view/View;)V`;
-find it by the `top_rounded_keyboard` / `always_top_rounded_keyboard_for_debug`
-flag strings). Until then the corners still work and the other two effects
-are simply skipped.
+point `INPUT_APK` in `build-fork.sh` at it (or pass its path), and add the new
+obfuscated name of the top-rounded keyboard module's
+`applyOutline(KeyboardViewType, View)` method to `GboardExpressiveLookPatch.kt`.
+Known names: 18.5.3 `Lrbm;->s(Lqcl;Landroid/view/View;)V`,
+18.6.3 `Lqvg;->t(Lpwj;Landroid/view/View;)V`. To find it, unzip `base.apk`
+from the bundle, find the `classes*.dex` containing
+`always_top_rounded_keyboard_for_debug`, decompile that dex with jadx, and
+look for the class with that flag and a private `(KeyboardViewType, View)`
+method that sets an outline provider. Until it is added, the corners still
+work and the sunburst, divider and spacing are skipped.
+
+Upstream releases also come with a "PixelBoard updates" screen in the app;
+don't install from it, since it replaces this build with the official one.
 
 ## Rolling back
 
-A copy of the original 1.3.3 install is in
-`%LOCALAPPDATA%\pixelboard-tools\backup\`. It has the same signature:
+Backups in `%LOCALAPPDATA%\pixelboard-tools\backup\`, all with the same
+signature:
+
+- `PixelBoard-1.3.3-installed.apk`: the original official 1.3.3.
+- `PixelBoard-1.3.3-expressive-18.5.3.apk`: this fork's 1.3.3 build.
+
+Going back from Gboard 18.6.3 to an 18.5.3 build is a downgrade
+(`-d`), which Gboard may not handle cleanly; prefer fixing forward.
 
 ```bash
-adb install -r -d "$LOCALAPPDATA/pixelboard-tools/backup/PixelBoard-1.3.3-installed.apk"
+adb install -r -d "$LOCALAPPDATA/pixelboard-tools/backup/PixelBoard-1.3.3-expressive-18.5.3.apk"
 ```
