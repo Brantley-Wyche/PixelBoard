@@ -59,6 +59,16 @@ look for the class with that flag and a private `(KeyboardViewType, View)`
 method that sets an outline provider. Until it is added, the corners still
 work and the sunburst, divider and spacing are skipped.
 
+The fork also adds **clear all unpinned clips**: long-press the trash icon in
+clipboard edit mode, confirm, and every unpinned clip is deleted through Gboard's
+own batch delete (so its Undo toast still works). It lives in
+`GboardClipboardClearAllPatch.kt` and `GboardClipboardClearAllRuntime.java`.
+The class names it hooks (`SoftKeyDef`, `ActionDef`, `ClipboardKeyboard`) are
+not obfuscated, but their members are: the patch keeps one `ClearAllNames`
+entry per Gboard build and skips itself when any name is missing. For a new
+base version, decompile `base.apk` with jadx, start from the `-10111`
+(`CLIPBOARD_BATCH_DELETE`) case in `ClipboardKeyboard`, and add a new entry.
+
 Upstream releases also come with a "PixelBoard updates" screen in the app;
 don't install from it, since it replaces this build with the official one.
 
