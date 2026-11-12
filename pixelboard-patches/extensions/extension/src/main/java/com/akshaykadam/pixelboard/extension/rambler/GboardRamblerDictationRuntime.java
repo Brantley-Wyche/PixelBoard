@@ -196,30 +196,29 @@ public final class GboardRamblerDictationRuntime {
                         intentField.setInt(action, 0);
                     }
 
-                    String textToInsert = !transcript.isEmpty() ? transcript : spanText;
-                    if (!textToInsert.isEmpty()) {
+                    if (spanText != null && !spanText.isEmpty()) {
                         // Check if spanText ALREADY starts with textBefore, ends with textAfter,
                         // and contains a non-empty delta (normal dictation path).
                         boolean hasPrefixAndDelta = !textBefore.isEmpty()
-                                && spanText != null
                                 && spanText.startsWith(textBefore)
                                 && spanText.endsWith(textAfter)
                                 && spanText.length() > (textBefore.length() + textAfter.length());
 
-                        if (!hasPrefixAndDelta) {
-                            // If spanText equals textBefore (Test 1, repeated phrase) or does NOT
-                            // start with textBefore (Test 2, similar phrase), format spanText with
-                            // textBefore + separator + textToInsert + textAfter.
-                            // Gboard's native logic will cleanly extract delta = separator + textToInsert
-                            // and commit it at the cursor without dropping or diff-overwriting!
-                            String formattedText;
-                            if (!textBefore.isEmpty()) {
-                                boolean needsSpace = needsSpaceBetween(textBefore, textToInsert);
-                                formattedText = textBefore + (needsSpace ? " " : "") + textToInsert + textAfter;
-                            } else {
-                                formattedText = textToInsert + textAfter;
+                        if (hasPrefixAndDelta) {
+                            lastInsertionStart = textBefore;
+                        } else {
+                            // Rambler sends back the field's text with the new words merged in
+                            // (full_transcript holds the same text, not just the spoken words),
+                            // so only the new words are added after textBefore. Gboard's native
+                            // logic then extracts delta = separator + newText and commits it at
+                            // the cursor without dropping or diff-overwriting earlier text.
+                            String newText = newDictationText(textBefore, spanText, lastInsertionStart);
+                            if (newText != null) {
+                                boolean needsSpace = needsSpaceBetween(textBefore, newText);
+                                textSpanField.set(span,
+                                        textBefore + (needsSpace ? " " : "") + newText + textAfter);
+                                lastInsertionStart = textBefore;
                             }
-                            textSpanField.set(span, formattedText);
                         }
                     }
                 }
@@ -350,6 +349,115 @@ public final class GboardRamblerDictationRuntime {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    /** The text before the cursor when the last Rambler dictation was inserted. */
+    private static volatile String lastInsertionStart;
+
+    static void rememberInsertionStart(String textBefore) {
+        lastInsertionStart = textBefore;
+    }
+
+    /**
+     * Works out which words of a Rambler result are new. Rambler returns the field's text
+     * with the new words merged in, so the result is compared with the text before the
+     * cursor word by word (ignoring case and punctuation).
+     *
+     * <ul>
+     *   <li>Every earlier word is kept and more follow: the words after them are new.</li>
+     *   <li>No words follow the earlier ones (nothing was heard, or an edit like "make it
+     *       all caps" or "delete that"): returns null, leaving the result to Gboard.</li>
+     *   <li>Rambler rewrote earlier words, treating the speech as a correction: everything
+     *       from where the last dictation started is new, or from the start of the rewritten
+     *       sentence if that is unknown.</li>
+     * </ul>
+     *
+     * @param before          text before the cursor
+     * @param span            Rambler's result text
+     * @param insertionStart  text before the cursor at the last dictation, or null
+     * @return the new text to add after {@code before}, or null to leave the result alone
+     */
+    static String newDictationText(String before, String span, String insertionStart) {
+        if (span == null || span.isEmpty()) {
+            return null;
+        }
+        if (before == null) {
+            before = "";
+        }
+        int[][] beforeWords = words(before);
+        int[][] spanWords = words(span);
+        int shared = 0;
+        while (shared < beforeWords.length && shared < spanWords.length
+                && sameWord(before, beforeWords[shared], span, spanWords[shared])) {
+            shared++;
+        }
+        if (shared == spanWords.length) {
+            return null;
+        }
+        int start;
+        if (shared == beforeWords.length) {
+            start = shared == 0 ? 0 : spanWords[shared - 1][1];
+        } else {
+            int first = -1;
+            if (insertionStart != null && before.startsWith(insertionStart)) {
+                int insertionWords = words(insertionStart).length;
+                if (insertionWords <= shared) {
+                    first = insertionWords;
+                }
+            }
+            if (first < 0) {
+                first = sentenceStartWord(span, spanWords, shared);
+            }
+            start = spanWords[first][0];
+        }
+        String newText = stripLeadingWhitespace(span.substring(start));
+        return newText.isEmpty() ? null : newText;
+    }
+
+    /** Start and end offsets of each run of letters and digits. */
+    private static int[][] words(String text) {
+        java.util.ArrayList<int[]> found = new java.util.ArrayList<>();
+        int i = 0;
+        while (i < text.length()) {
+            int codePoint = text.codePointAt(i);
+            if (Character.isLetterOrDigit(codePoint)) {
+                int start = i;
+                while (i < text.length() && Character.isLetterOrDigit(text.codePointAt(i))) {
+                    i += Character.charCount(text.codePointAt(i));
+                }
+                found.add(new int[] {start, i});
+            } else {
+                i += Character.charCount(codePoint);
+            }
+        }
+        return found.toArray(new int[0][]);
+    }
+
+    private static boolean sameWord(String a, int[] aWord, String b, int[] bWord) {
+        return a.substring(aWord[0], aWord[1]).toLowerCase(Locale.ROOT)
+                .equals(b.substring(bWord[0], bWord[1]).toLowerCase(Locale.ROOT));
+    }
+
+    /** Index of the first word of the sentence or line containing word {@code index}. */
+    private static int sentenceStartWord(String text, int[][] textWords, int index) {
+        int first = index;
+        while (first > 0) {
+            String gap = text.substring(textWords[first - 1][1], textWords[first][0]);
+            if (gap.indexOf('.') >= 0 || gap.indexOf('!') >= 0 || gap.indexOf('?') >= 0
+                    || gap.indexOf('\n') >= 0) {
+                break;
+            }
+            first--;
+        }
+        return first;
+    }
+
+    private static String stripLeadingWhitespace(String text) {
+        int i = 0;
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
+            i++;
+        }
+        return text.substring(i);
     }
 
     private static boolean needsSpaceBetween(String textBefore, String textToInsert) {
