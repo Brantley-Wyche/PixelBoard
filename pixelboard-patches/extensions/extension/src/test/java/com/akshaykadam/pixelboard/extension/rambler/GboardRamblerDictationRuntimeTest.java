@@ -8,12 +8,18 @@
 package com.akshaykadam.pixelboard.extension.rambler;
 
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.util.Collections;
 import java.util.List;
 
 public final class GboardRamblerDictationRuntimeTest {
+
+    @Before
+    public void forgetLastInsertion() {
+        GboardRamblerDictationRuntime.rememberInsertionStart(null);
+    }
 
     public static class FakeDiff {
         public int b;
@@ -110,19 +116,18 @@ public final class GboardRamblerDictationRuntimeTest {
     }
 
     @Test
-    public void test1_repeatedPhraseIsAppendedRatherThanDropped() {
-        // User previously dictated "Тридцать восемь попугаев пошли купаться в море. Ни один не выплыл."
-        String existing = "Тридцать восемь попугаев пошли купаться в море. Ни один не выплыл.";
+    public void spanThatOnlyRepeatsTheFieldInsertsNothing() {
+        // Rambler sends the field's text back with nothing new when it heard nothing.
+        // (Gboard 18.6.3 puts the field's text in both the span and full_transcript.)
+        String existing = "When using the shoulder press machine, set the seat height ";
         FakeExtension ext = new FakeExtension(existing, "", "");
 
-        // User speaks the exact same sentence into the mic:
         FakeAction action = new FakeAction();
-        action.c = 0; // DEFAULT_INTENT_DICTATION
-        action.d = existing;
+        action.c = 2;
+        action.d = existing.trim();
 
         FakeSpan span = new FakeSpan();
-        // Server deduped with context and sent span.c equal to existing:
-        span.c = existing;
+        span.c = existing.trim();
         span.j = action;
 
         FakeProto proto = new FakeProto();
@@ -130,10 +135,32 @@ public final class GboardRamblerDictationRuntimeTest {
 
         GboardRamblerDictationRuntime.filterVoiceText(ext, proto);
 
-        // Committed span must start with textBefore and include the repeated phrase with space:
-        String expected = existing + " " + existing;
-        Assert.assertEquals(expected, span.c);
-        Assert.assertEquals(0, action.c);
+        Assert.assertEquals(existing.trim(), span.c);
+    }
+
+    @Test
+    public void correctionOfTheLastDictationIsAppendedAsNewText() {
+        // "200 " was pasted, then "Testing testing 1 2 3" dictated, then a new line.
+        GboardRamblerDictationRuntime.rememberInsertionStart("200 ");
+        String existing = "200 Testing testing 1 2 3\n\n";
+        FakeExtension ext = new FakeExtension(existing, "", "");
+
+        // The user says "Testing testing 4 5 6"; Rambler treats it as a correction of
+        // the last dictation and sends the whole field back with that part replaced.
+        FakeAction action = new FakeAction();
+        action.c = 2;
+        action.d = "200 Testing testing 4 5 6";
+
+        FakeSpan span = new FakeSpan();
+        span.c = "200 Testing testing 4 5 6";
+        span.j = action;
+
+        FakeProto proto = new FakeProto();
+        proto.b = Collections.singletonList(span);
+
+        GboardRamblerDictationRuntime.filterVoiceText(ext, proto);
+
+        Assert.assertEquals(existing + "Testing testing 4 5 6", span.c);
     }
 
     @Test
@@ -290,6 +317,68 @@ public final class GboardRamblerDictationRuntimeTest {
         // Already has prefix and delta, left untouched:
         Assert.assertEquals("Hello world", span.c);
         Assert.assertEquals(0, action.c);
+    }
+
+    @Test
+    public void newTextIsOnlyTheWordsAfterTheField() {
+        Assert.assertEquals(", and more.", GboardRamblerDictationRuntime.newDictationText(
+                "Testing testing 1 2 3", "Testing testing 1, 2, 3, and more.", null));
+        Assert.assertEquals("Hello there.", GboardRamblerDictationRuntime.newDictationText(
+                "", "Hello there.", null));
+    }
+
+    @Test
+    public void editsOfTheFieldWithNoNewWordsAreLeftToGboard() {
+        Assert.assertNull(GboardRamblerDictationRuntime.newDictationText(
+                "hello world", "HELLO WORLD", null));
+        Assert.assertNull(GboardRamblerDictationRuntime.newDictationText(
+                "hello world", "hello", null));
+    }
+
+    @Test
+    public void rewrittenTextFallsBackToTheSentenceStart() {
+        Assert.assertEquals("Testing testing 4 5 6", GboardRamblerDictationRuntime.newDictationText(
+                "First one. Testing testing 1 2 3 ", "First one. Testing testing 4 5 6", null));
+        // A remembered start that the field no longer begins with is ignored.
+        Assert.assertEquals("Testing testing 4 5 6", GboardRamblerDictationRuntime.newDictationText(
+                "First one. Testing testing 1 2 3 ", "First one. Testing testing 4 5 6", "Other "));
+    }
+
+    @Test
+    public void rewrittenTextUsesTheLastInsertionStart() {
+        Assert.assertEquals("Testing testing 4 5 6", GboardRamblerDictationRuntime.newDictationText(
+                "200 Testing testing 1 2 3\n\n", "200 Testing testing 4 5 6", "200 "));
+        Assert.assertEquals("Testing testing 4 5 6", GboardRamblerDictationRuntime.newDictationText(
+                "Testing testing 1 2 3", "Testing testing 4 5 6", ""));
+    }
+
+    @Test
+    public void secondDictationIsNotDoubled() {
+        FakeExtension first = new FakeExtension("200 ", "", "");
+        FakeSpan firstSpan = dictation("200 Testing testing 1 2 3.");
+        GboardRamblerDictationRuntime.filterVoiceText(first, proto(firstSpan));
+        Assert.assertEquals("200 Testing testing 1 2 3.", firstSpan.c);
+
+        FakeExtension second = new FakeExtension("200 Testing testing 1 2 3\n\n", "", "");
+        FakeSpan secondSpan = dictation("200 Testing testing 4 5 6");
+        GboardRamblerDictationRuntime.filterVoiceText(second, proto(secondSpan));
+        Assert.assertEquals("200 Testing testing 1 2 3\n\nTesting testing 4 5 6", secondSpan.c);
+    }
+
+    private static FakeSpan dictation(String text) {
+        FakeAction action = new FakeAction();
+        action.c = 2;
+        action.d = text;
+        FakeSpan span = new FakeSpan();
+        span.c = text;
+        span.j = action;
+        return span;
+    }
+
+    private static FakeProto proto(FakeSpan span) {
+        FakeProto proto = new FakeProto();
+        proto.b = Collections.singletonList(span);
+        return proto;
     }
 
     @Test
