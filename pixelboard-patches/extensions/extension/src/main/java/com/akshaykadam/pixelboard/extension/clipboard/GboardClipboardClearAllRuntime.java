@@ -1,8 +1,14 @@
 package com.akshaykadam.pixelboard.extension.clipboard;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import com.akshaykadam.pixelboard.extension.keyboard.M3ExpressiveMotion;
+import com.akshaykadam.pixelboard.extension.settings.GboardExpressiveLookSettings;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -106,7 +112,10 @@ public final class GboardClipboardClearAllRuntime {
             attributes.type = ATTACHED_DIALOG_WINDOW_TYPE;
             window.setAttributes(attributes);
             palette.applyWindow(window, context);
-            dialog.setOnShowListener(d -> palette.applyContent(dialog));
+            dialog.setOnShowListener(d -> {
+                palette.applyContent(dialog);
+                animateDialogEntrance(dialog, context);
+            });
 
             View.OnAttachStateChangeListener dismissOnDetach = new View.OnAttachStateChangeListener() {
                 @Override
@@ -351,7 +360,101 @@ public final class GboardClipboardClearAllRuntime {
         int cleared = invokeInt(keyboard, CLEAR_METHOD);
         if (cleared < 0) {
             Log.w(TAG, "Clearing unpinned clips failed");
+        } else if (cleared > 0) {
+            animateClipboardClearedFeedback(anchor);
         }
+    }
+
+    private static void animateDialogEntrance(AlertDialog dialog, Context context) {
+        if (!GboardExpressiveLookSettings.isEnabled(context)
+                || !M3ExpressiveMotion.shouldAnimate(context)) {
+            return;
+        }
+        Window window = dialog.getWindow();
+        if (window == null) {
+            return;
+        }
+        View decor = window.getDecorView();
+        if (decor == null) {
+            return;
+        }
+        float offsetPx = 12f * context.getResources().getDisplayMetrics().density;
+        decor.setAlpha(0f);
+        Runnable startEntrance = () -> {
+            if (!dialog.isShowing()) {
+                return;
+            }
+            if (decor.getWidth() > 0 && decor.getHeight() > 0) {
+                decor.setPivotX(decor.getWidth() * 0.5f);
+                decor.setPivotY(decor.getHeight() * 0.5f);
+            }
+            decor.setScaleX(0.88f);
+            decor.setScaleY(0.88f);
+            decor.setTranslationY(offsetPx);
+
+            ObjectAnimator scaleX = ObjectAnimator.ofFloat(decor, View.SCALE_X, 0.88f, 1f);
+            ObjectAnimator scaleY = ObjectAnimator.ofFloat(decor, View.SCALE_Y, 0.88f, 1f);
+            ObjectAnimator translateY = ObjectAnimator.ofFloat(decor, View.TRANSLATION_Y, offsetPx, 0f);
+            scaleX.setDuration(M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS);
+            scaleY.setDuration(M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS);
+            translateY.setDuration(M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS);
+            scaleX.setInterpolator(M3ExpressiveMotion.spatialDefault());
+            scaleY.setInterpolator(M3ExpressiveMotion.spatialDefault());
+            translateY.setInterpolator(M3ExpressiveMotion.spatialDefault());
+
+            ObjectAnimator alpha = ObjectAnimator.ofFloat(decor, View.ALPHA, 0f, 1f);
+            alpha.setDuration(M3ExpressiveMotion.DURATION_EFFECTS_FAST_MS);
+            alpha.setInterpolator(M3ExpressiveMotion.effectsFast());
+
+            AnimatorSet set = new AnimatorSet();
+            set.playTogether(scaleX, scaleY, translateY, alpha);
+            set.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    decor.setScaleX(1f);
+                    decor.setScaleY(1f);
+                    decor.setTranslationY(0f);
+                    decor.setAlpha(1f);
+                }
+            });
+            set.start();
+        };
+        if (decor.getWidth() > 0 && decor.getHeight() > 0) {
+            startEntrance.run();
+        } else {
+            decor.post(startEntrance);
+        }
+    }
+
+    private static void animateClipboardClearedFeedback(View anchor) {
+        Context context = anchor.getContext();
+        if (!GboardExpressiveLookSettings.isEnabled(context)
+                || !M3ExpressiveMotion.shouldAnimate(context)) {
+            return;
+        }
+        pulseSpringSettle(anchor, 0.84f);
+        ViewParent parent = anchor.getParent();
+        if (parent instanceof View) {
+            pulseSpringSettle((View) parent, 0.985f);
+        }
+    }
+
+    private static void pulseSpringSettle(View target, float startScale) {
+        if (target.getWidth() > 0 && target.getHeight() > 0) {
+            target.setPivotX(target.getWidth() * 0.5f);
+            target.setPivotY(target.getHeight() * 0.5f);
+        }
+        target.setScaleX(startScale);
+        target.setScaleY(startScale);
+        ObjectAnimator scaleX = ObjectAnimator.ofFloat(target, View.SCALE_X, startScale, 1f);
+        ObjectAnimator scaleY = ObjectAnimator.ofFloat(target, View.SCALE_Y, startScale, 1f);
+        scaleX.setDuration(M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS);
+        scaleY.setDuration(M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS);
+        scaleX.setInterpolator(M3ExpressiveMotion.spatialFast());
+        scaleY.setInterpolator(M3ExpressiveMotion.spatialFast());
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(scaleX, scaleY);
+        set.start();
     }
 
     private static int invokeInt(Object target, String name) {
