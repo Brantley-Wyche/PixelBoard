@@ -3,42 +3,79 @@ package com.akshaykadam.pixelboard.extension.keyboard;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.animation.TimeInterpolator;
+
 import org.junit.Test;
 
 public class M3ExpressiveMotionTest {
 
     @Test
+    public void springsUseTheOfficialExpressiveMotionTokens() {
+        // Compose Material 3 1.5.0 ExpressiveMotionTokens.
+        assertEquals(0.6f, M3ExpressiveMotion.FAST_SPATIAL_DAMPING, 0f);
+        assertEquals(800f, M3ExpressiveMotion.FAST_SPATIAL_STIFFNESS, 0f);
+        assertEquals(0.8f, M3ExpressiveMotion.DEFAULT_SPATIAL_DAMPING, 0f);
+        assertEquals(380f, M3ExpressiveMotion.DEFAULT_SPATIAL_STIFFNESS, 0f);
+        assertEquals(0.8f, M3ExpressiveMotion.SLOW_SPATIAL_DAMPING, 0f);
+        assertEquals(200f, M3ExpressiveMotion.SLOW_SPATIAL_STIFFNESS, 0f);
+        assertEquals(1.0f, M3ExpressiveMotion.FAST_EFFECTS_DAMPING, 0f);
+        assertEquals(3800f, M3ExpressiveMotion.FAST_EFFECTS_STIFFNESS, 0f);
+    }
+
+    @Test
     public void springStartsAtZeroAndEndsAtOne() {
-        assertEquals(0f, M3ExpressiveMotion.spring(0f, 0.58f, 1.35f), 0.0001f);
-        assertEquals(1f, M3ExpressiveMotion.spring(1f, 0.58f, 1.35f), 0.0001f);
-        assertEquals(0f, M3ExpressiveMotion.spring(-0.2f, 0.65f, 1.25f), 0.0001f);
-        assertEquals(1f, M3ExpressiveMotion.spring(1.3f, 0.65f, 1.25f), 0.0001f);
+        assertEquals(0f, M3ExpressiveMotion.spring(0f, 0.6f, 800f, 0.4f), 0.0001f);
+        assertEquals(1f, M3ExpressiveMotion.spring(1f, 0.6f, 800f, 0.4f), 0.0001f);
+        assertEquals(0f, M3ExpressiveMotion.spring(-0.2f, 1.0f, 3800f, 0.12f), 0.0001f);
+        assertEquals(1f, M3ExpressiveMotion.spring(1.3f, 1.0f, 3800f, 0.12f), 0.0001f);
     }
 
     @Test
-    public void fastSpatialSpringOvershootsBeforeSettling() {
-        float peak = 0f;
-        for (int i = 1; i < 100; i++) {
-            float t = i / 100f;
-            peak = Math.max(peak, M3ExpressiveMotion.spatialFast().getInterpolation(t));
-        }
-        assertTrue("Expected expressive overshoot above 1.0, was " + peak, peak > 1.04f && peak < 1.25f);
-        assertEquals(1f, M3ExpressiveMotion.spatialFast().getInterpolation(1f), 0.0001f);
-        assertEquals(1f, M3ExpressiveMotion.spatialDefault().getInterpolation(1f), 0.0001f);
+    public void fastSpatialOvershootsLikeADampingRatioOfPointSix() {
+        // exp(-pi * 0.6 / sqrt(1 - 0.36)) = 9.5% overshoot.
+        float peak = peak(M3ExpressiveMotion.spatialFast());
+        assertTrue("Fast spatial peak was " + peak, peak > 1.08f && peak < 1.11f);
     }
 
     @Test
-    public void smoothSpatialGlidesWithoutBouncing() {
+    public void defaultAndSlowSpatialOnlyBarelyOvershoot() {
+        // exp(-pi * 0.8 / 0.6) = 1.5% overshoot.
+        float defaultPeak = peak(M3ExpressiveMotion.spatialDefault());
+        float slowPeak = peak(M3ExpressiveMotion.spatialSlow());
+        assertTrue("Default spatial peak was " + defaultPeak, defaultPeak > 1.01f && defaultPeak < 1.02f);
+        assertTrue("Slow spatial peak was " + slowPeak, slowPeak > 1.01f && slowPeak < 1.02f);
+        assertEquals(1f, M3ExpressiveMotion.spatialSlow().getInterpolation(1f), 0.0001f);
+    }
+
+    @Test
+    public void effectsSpringsNeverOvershootOrReverse() {
+        TimeInterpolator effects = M3ExpressiveMotion.effectsFast();
         float previous = 0f;
-        for (int i = 1; i <= 100; i++) {
-            float value = M3ExpressiveMotion.spatialSmooth().getInterpolation(i / 100f);
-            assertTrue("Smooth glide should not overshoot, was " + value, value <= 1.005f);
-            assertTrue("Smooth glide should never move backwards", value >= previous - 0.0001f);
+        for (int i = 1; i <= 200; i++) {
+            float value = effects.getInterpolation(i / 200f);
+            assertTrue("Effects spring overshot to " + value, value <= 1.0001f);
+            assertTrue("Effects spring moved backwards", value >= previous - 0.0001f);
             previous = value;
         }
-        assertEquals(1f, M3ExpressiveMotion.spatialSmooth().getInterpolation(1f), 0.0001f);
-        assertTrue(M3ExpressiveMotion.DURATION_SMOOTH_SPATIAL_MS
-                > M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS);
+    }
+
+    @Test
+    public void durationsComeFromEachSpringsSettlingTime() {
+        assertTrue(M3ExpressiveMotion.DURATION_EFFECTS_FAST_MS < M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS);
+        assertTrue(M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS < M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS);
+        assertTrue(M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS < M3ExpressiveMotion.DURATION_SLOW_SPATIAL_MS);
+        assertTrue(M3ExpressiveMotion.DURATION_EFFECTS_FAST_MS >= 80L
+                && M3ExpressiveMotion.DURATION_EFFECTS_FAST_MS <= 160L);
+        assertTrue(M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS >= 250L
+                && M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS <= 400L);
+        assertTrue(M3ExpressiveMotion.DURATION_SLOW_SPATIAL_MS <= 600L);
+    }
+
+    @Test
+    public void springHasSettledWhenItsDurationEnds() {
+        // Just before the end, the raw spring is already within the settling threshold.
+        float nearEnd = M3ExpressiveMotion.spatialFast().getInterpolation(0.99f);
+        assertEquals(1f, nearEnd, 0.006f);
     }
 
     @Test
@@ -66,5 +103,13 @@ public class M3ExpressiveMotionTest {
         float deepValley = GboardExpressiveLookRuntime.sunburstRadius(40f, Math.PI / 12, 0.095f);
         assertTrue("Pressed depth should deepen valleys", deepValley < subtleValley);
         assertEquals(40f, GboardExpressiveLookRuntime.sunburstRadius(40f, 0.0, 0.095f), 0.001f);
+    }
+
+    private static float peak(TimeInterpolator interpolator) {
+        float peak = 0f;
+        for (int i = 1; i < 400; i++) {
+            peak = Math.max(peak, interpolator.getInterpolation(i / 400f));
+        }
+        return peak;
     }
 }

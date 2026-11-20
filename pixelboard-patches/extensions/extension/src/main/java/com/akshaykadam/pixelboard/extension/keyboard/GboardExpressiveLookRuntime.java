@@ -79,11 +79,9 @@ public final class GboardExpressiveLookRuntime {
     private static final float POPUP_START_SCALE_Y = 0.80f;
     private static final int POPUP_START_TRANSLATION_DP = 5;
     private static final float POPUP_START_ALPHA = 0.70f;
-    private static final long POPUP_ANIM_DURATION_MS = 165L;
     private static final int PANEL_ENTRANCE_TRANSLATION_DP = 10;
     private static final float TRANSFORM_EPSILON = 0.01f;
     private static final float PANEL_ENTRANCE_ALPHA = 0.88f;
-    private static final long PANEL_ENTRANCE_DURATION_MS = 230L;
 
     /** Views found on the last keyboard view change, re-checked before every frame. */
     private static final class Targets implements ViewTreeObserver.OnPreDrawListener {
@@ -320,7 +318,7 @@ public final class GboardExpressiveLookRuntime {
         }
         ObjectAnimator slide = ObjectAnimator.ofFloat(
                 view, View.TRANSLATION_Y, dp(view, PANEL_ENTRANCE_TRANSLATION_DP), 0f);
-        slide.setDuration(PANEL_ENTRANCE_DURATION_MS);
+        slide.setDuration(M3ExpressiveMotion.DURATION_DEFAULT_SPATIAL_MS);
         slide.setInterpolator(M3ExpressiveMotion.spatialDefault());
         slide.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
@@ -374,7 +372,7 @@ public final class GboardExpressiveLookRuntime {
                 .scaleX(1.0f)
                 .scaleY(1.0f)
                 .translationY(0f)
-                .setDuration(POPUP_ANIM_DURATION_MS)
+                .setDuration(M3ExpressiveMotion.DURATION_FAST_SPATIAL_MS)
                 .setInterpolator(M3ExpressiveMotion.spatialFast())
                 .start();
         ObjectAnimator alphaAnim = ObjectAnimator.ofFloat(popup, View.ALPHA, POPUP_START_ALPHA, 1.0f);
@@ -460,8 +458,8 @@ public final class GboardExpressiveLookRuntime {
                 toolbarHolder.setTranslationY(toolbarHolder.getTranslationY() - delta);
                 toolbarHolder.animate()
                         .translationY(0f)
-                        .setDuration(M3ExpressiveMotion.DURATION_SMOOTH_SPATIAL_MS)
-                        .setInterpolator(M3ExpressiveMotion.spatialSmooth())
+                        .setDuration(M3ExpressiveMotion.DURATION_SLOW_SPATIAL_MS)
+                        .setInterpolator(M3ExpressiveMotion.spatialSlow())
                         .start();
             }
         }
