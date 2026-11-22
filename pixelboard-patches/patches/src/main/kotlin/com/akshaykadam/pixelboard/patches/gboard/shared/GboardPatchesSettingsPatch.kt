@@ -29,6 +29,8 @@ import com.akshaykadam.pixelboard.patches.gboard.features.rambler.gboardRamblerM
 import com.akshaykadam.pixelboard.patches.gboard.features.keyboard.gboardKeyboardSymbolKeyLabelPatch
 import com.akshaykadam.pixelboard.patches.gboard.features.keyboard.gboardExpressiveLookPatch
 import com.akshaykadam.pixelboard.patches.gboard.features.clipboard.gboardClipboardClearAllPatch
+import com.akshaykadam.pixelboard.patches.gboard.features.keyboard.gboardKeyboardHapticPatch
+import com.akshaykadam.pixelboard.patches.gboard.features.launchericon.gboardLauncherIconVisibilityPatch
 
 internal val gboardPatchesSettingsPatch = resourcePatch(
     description = "Add Patches entry to the bottom of Gboard settings."
@@ -50,6 +52,8 @@ internal val gboardPatchesSettingsPatch = resourcePatch(
         gboardKeyboardSymbolKeyLabelPatch,
         gboardExpressiveLookPatch,
         gboardClipboardClearAllPatch,
+        gboardKeyboardHapticPatch,
+        gboardLauncherIconVisibilityPatch,
     )
 
     finalize {
